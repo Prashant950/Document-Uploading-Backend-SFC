@@ -17,6 +17,7 @@ import mongoose from "mongoose";
 const documentSchema = new mongoose.Schema(
   {
     docName: String,
+    docKey: { type: String, required: true },
     fileId: mongoose.Schema.Types.ObjectId,
     originalName: String,
     contentType: String,

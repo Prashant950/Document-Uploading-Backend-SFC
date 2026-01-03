@@ -7,10 +7,14 @@ import { config } from "./src/config/config.js";
 
 const app = express();
 app.use(cors());
+
+app.use("/api/documents", docRoutes);
+
+
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 app.use("/api/pin", pinRoutes);
-app.use("/api/documents", docRoutes);
 
 initDB();
 
