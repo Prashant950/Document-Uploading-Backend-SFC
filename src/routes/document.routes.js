@@ -70,61 +70,66 @@ const router = express.Router();
 // );
 
 // Accept multiple files with field name 'files'
+
 router.post(
   "/upload",
   authMiddleware,
-  upload.array("files", 10), // max 10 files at once
+  upload.array("files", 10),
   async (req, res) => {
     try {
-      console.log("BODY:", req.body);
-      console.log("FILES:", req.files);
-
       if (!req.files || req.files.length === 0) {
         return res.status(400).json({ message: "Files required" });
       }
 
-      const docs = [];
+      const bucket = new mongoose.mongo.GridFSBucket(
+        mongoose.connection.db,
+        { bucketName: "documents" }
+      );
 
-      for (const f of req.files) {
-        const bucket = new mongoose.mongo.GridFSBucket(
-          mongoose.connection.db,
-          { bucketName: "documents" }
-        );
+      const savedDocs = [];
 
-        const uploadStream = bucket.openUploadStream(f.originalname);
-        fs.createReadStream(f.path)
-          .pipe(uploadStream)
-          .on("finish", async () => {
-            const doc = await Document.create({
-              docName: req.body.docName,
-              docKey: req.body.docKey || "OTHER",
-              fileId: uploadStream.id,
-              originalName: f.originalname,
-              contentType: f.mimetype,
-              user: req.user._id,
-            });
+      for (const file of req.files) {
+        const uploadStream = bucket.openUploadStream(file.originalname);
 
-            docs.push(doc);
+        await new Promise((resolve, reject) => {
+          fs.createReadStream(file.path)
+            .pipe(uploadStream)
+            .on("error", reject)
+            .on("finish", resolve);
+        });
 
-            fs.unlinkSync(f.path);
-          });
+        const doc = await Document.create({
+          docName: req.body.docName,
+          docKey: req.body.docKey || "OTHER",
+          fileId: uploadStream.id,
+          originalName: file.originalname,
+          contentType: file.mimetype,
+          user: req.userId,
+        });
+
+        savedDocs.push(doc);
+        fs.unlinkSync(file.path);
       }
 
       res.status(201).json({
         success: true,
-        documents: docs,
+        count: savedDocs.length,
+        documents: savedDocs,
       });
+
     } catch (error) {
-      console.error(error);
+      console.error("UPLOAD ERROR", error);
       res.status(500).json({ message: "Upload failed" });
     }
   }
 );
 
 
+
+
 router.get("/", authMiddleware, async (req, res) => {
   try{
-  const docs = await Document.find({ user: req.user._id }).sort({ createdAt: -1 });
+  const docs = await Document.find({ user: req.userId }).sort({ createdAt: -1 });
   res.json(docs);
 } catch (error) {
   console.error(error);
