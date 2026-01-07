@@ -71,54 +71,101 @@ const router = express.Router();
 
 // Accept multiple files with field name 'files'
 
+//  router.post(
+//   "/upload",
+//   authMiddleware,
+//   upload.array("files", 10),
+//   async (req, res) => {
+//     try {
+//       if (!req.files || req.files.length === 0) {
+//         return res.status(400).json({ message: "Files required" });
+//       }
+
+//       const bucket = new mongoose.mongo.GridFSBucket(
+//         mongoose.connection.db,
+//         { bucketName: "documents" }
+//       );
+
+//       const savedDocs = [];
+
+//       for (const file of req.files) {
+//         const uploadStream = bucket.openUploadStream(file.originalname);
+
+//         await new Promise((resolve, reject) => {
+//           fs.createReadStream(file.path)
+//             .pipe(uploadStream)
+//             .on("error", reject)
+//             .on("finish", resolve);
+//         });
+
+//         const doc = await Document.create({
+//           docName: req.body.docName,
+//           docKey: req.body.docKey || "OTHER",
+//           fileId: uploadStream.id,
+//           originalName: file.originalname,
+//           contentType: file.mimetype,
+//           user: req.userId,
+//         });
+
+//         savedDocs.push(doc);
+//         fs.unlinkSync(file.path);
+//       }
+
+//       res.status(201).json({
+//         success: true,
+//         count: savedDocs.length,
+//         documents: savedDocs,
+//       });
+
+//     } catch (error) {
+//       console.error("UPLOAD ERROR", error);
+//       res.status(500).json({ message: "Upload failed" });
+//     }
+//   }
+// );
+
 router.post(
   "/upload",
   authMiddleware,
   upload.array("files", 10),
   async (req, res) => {
     try {
-      if (!req.files || req.files.length === 0) {
-        return res.status(400).json({ message: "Files required" });
-      }
-
       const bucket = new mongoose.mongo.GridFSBucket(
         mongoose.connection.db,
         { bucketName: "documents" }
       );
 
-      const savedDocs = [];
+      const uploadPromises = req.files.map((f) => {
+        return new Promise((resolve, reject) => {
+          const uploadStream = bucket.openUploadStream(f.originalname);
 
-      for (const file of req.files) {
-        const uploadStream = bucket.openUploadStream(file.originalname);
-
-        await new Promise((resolve, reject) => {
-          fs.createReadStream(file.path)
+          fs.createReadStream(f.path)
             .pipe(uploadStream)
-            .on("error", reject)
-            .on("finish", resolve);
-        });
+            .on("finish", async () => {
+              const doc = await Document.create({
+                docName: req.body.docName,
+                docKey: req.body.docKey || "OTHER",
+                fileId: uploadStream.id,
+                originalName: f.originalname,
+                contentType: f.mimetype,
+                user: req.userId,
+              });
 
-        const doc = await Document.create({
-          docName: req.body.docName,
-          docKey: req.body.docKey || "OTHER",
-          fileId: uploadStream.id,
-          originalName: file.originalname,
-          contentType: file.mimetype,
-          user: req.userId,
+              fs.unlinkSync(f.path);
+              resolve(doc);
+            })
+            .on("error", reject);
         });
+      });
 
-        savedDocs.push(doc);
-        fs.unlinkSync(file.path);
-      }
+      const documents = await Promise.all(uploadPromises);
 
       res.status(201).json({
         success: true,
-        count: savedDocs.length,
-        documents: savedDocs,
+        count: documents.length,
+        documents,
       });
-
-    } catch (error) {
-      console.error("UPLOAD ERROR", error);
+    } catch (err) {
       res.status(500).json({ message: "Upload failed" });
     }
   }
@@ -136,6 +183,7 @@ router.get("/", authMiddleware, async (req, res) => {
   res.status(500).json({ message: "Server error" });
 } 
 });
+
 
 router.delete("/:id", authMiddleware, async (req, res) => {
   try {
