@@ -5,6 +5,7 @@ const pinSchema = new mongoose.Schema(
     pinHash: {
       type: String,
       required: true,
+      unique: true,
     },
   },
   { timestamps: true }
