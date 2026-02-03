@@ -3,11 +3,11 @@ import jwt from "jsonwebtoken";
 import Pin from "../models/Pin.js";
 import { config } from "../config/config.js";
 import bcrypt from "bcrypt";
-
+import { authMiddleware } from "../middleware/auth.js";
 
 const router = express.Router();
 
-/* CREATE PIN */
+
 router.post("/create-pin", async (req, res) => {
   const { pin } = req.body;
 
@@ -15,32 +15,22 @@ router.post("/create-pin", async (req, res) => {
     return res.status(400).json({ message: "Invalid PIN" });
   }
 
-  await Pin.deleteMany(); // only one active PIN
-  await Pin.create({ pin: String(pin) });
+  const existingPin = await Pin.findOne();
+  if (existingPin) {
+    return res.status(400).json({ message: "PIN already exists" });
+  }
 
-  res.status(201).json({ message: "PIN created successfully" });
+  const pinHash = await bcrypt.hash(pin, 10);
+  const user = await Pin.create({ pinHash });
+
+  const token = jwt.sign(
+    { userId: user._id },
+    config.jwtSecret,
+    { expiresIn: "1d" }
+  );
+  res.status(201).json({ message: "PIN created successfully", token });
 });
 
-// router.post("/create-pin", async (req, res) => {
-//   const { pin } = req.body;
-
-//   if (!pin || pin.length !== 4) {
-//     return res.status(400).json({ message: "Invalid PIN" });
-//   }
-
-//   const existingPin = await Pin.findOne();
-//   if (existingPin) {
-//     return res.status(400).json({ message: "PIN already exists" });
-//   }
-
-//   const pinHash = await bcrypt.hash(pin, 10);
-//   await Pin.create({ pinHash });
-
-//   res.json({ message: "PIN created" });
-// });
-
-
-/* CONFIRM PIN */
 router.post("/confirm-pin", async (req, res) => {
   try {
     const { pin } = req.body;
@@ -49,21 +39,29 @@ router.post("/confirm-pin", async (req, res) => {
       return res.status(400).json({ message: "PIN is required" });
     }
 
-    // ✅ latest PIN uthao
-    const savedPin = await Pin.findOne().sort({ createdAt: -1 });
+    const users = await Pin.find();
 
-    if (!savedPin) {
-      return res.status(400).json({ message: "No PIN found. Create PIN first." });
+    if (!users.length) {
+      return res.status(400).json({ message: "No PIN found" });
     }
 
-    // ❌ agar string vs number mismatch ho raha ho
-    if (String(savedPin.pin) !== String(pin)) {
-      return res.status(400).json({ message: "PIN mismatch" });
+    let matchedUser = null;
+
+    for (let user of users) {
+      const match = await bcrypt.compare(pin, user.pinHash);
+      if (match) {
+        matchedUser = user;
+        break;
+      }
+    }
+
+    if (!matchedUser) {
+      return res.status(400).json({ message: "Wrong PIN" });
     }
 
     const token = jwt.sign(
-      { pinId: savedPin._id },
-      process.env.JWT_SECRET,
+      { userId: matchedUser._id }, // 🔥 VERY IMPORTANT
+      config.jwtSecret,
       { expiresIn: "1d" }
     );
 
@@ -74,33 +72,10 @@ router.post("/confirm-pin", async (req, res) => {
     });
 
   } catch (error) {
-    console.error(error);
+    console.error("CONFIRM PIN ERROR", error);
     res.status(500).json({ message: "Server error" });
   }
 });
-
-
-// router.post("/confirm-pin", async (req, res) => {
-//   const { pin } = req.body;
-
-//   const savedPin = await Pin.findOne();
-//   if (!savedPin) {
-//     return res.status(400).json({ message: "PIN not found" });
-//   }
-
-//   const match = await bcrypt.compare(pin, savedPin.pinHash);
-//   if (!match) {
-//     return res.status(400).json({ message: "Wrong PIN" });
-//   }
-
-//   const token = jwt.sign(
-//     { pinId: savedPin._id },
-//     process.env.JWT_SECRET,
-//     { expiresIn: "1d" }
-//   );
-
-//   res.json({ token });
-// });
 
 
 router.get("/exists", async (req, res) => {

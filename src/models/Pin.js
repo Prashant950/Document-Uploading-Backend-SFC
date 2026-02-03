@@ -2,9 +2,10 @@ import mongoose from "mongoose";
 
 const pinSchema = new mongoose.Schema(
   {
-    pin: {
+    pinHash: {
       type: String,
       required: true,
+      unique: true,
     },
   },
   { timestamps: true }

@@ -1,31 +1,60 @@
-// import mongoose from "mongoose";
-
-// const documentSchema = new mongoose.Schema(
-//   {
-//     name: String,
-//     fileName: String,
-//     fileUrl: String,
-//   },
-//   { timestamps: true }
-// );
-
-// export default mongoose.model("Document", documentSchema);
-
-
 import mongoose from "mongoose";
 
 const documentSchema = new mongoose.Schema(
   {
-    docName: String,
-    fileId: mongoose.Schema.Types.ObjectId,
-    originalName: String,
-    contentType: String,
-    user: {
+    docName: {
+      type: String,
+      required: true,
+    },
+    docKey: {
+      type: String,
+      enum: [
+        "CLIENT_STRATEGY",
+        "FINANCIAL_ADVISORY",
+        "PROJECT_BLUEPRINT",
+        "CONSULTANT_REPORT",
+        "CONTRACT",
+        "HR_RECORD",
+        "OTHER",
+      ],
+      required: true,
+    },
+    fileId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      required: true,
+    },
+    originalName: {
+      type: String,
+      required: true,
+    },
+    contentType: {
+      type: String,
+      required: true,
+    },
+    fileSize: {
+      type: Number,
+      default: 0,
+    },
+    orgId: {
+      type: String,
+      
+    },
+    uploadedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      refPath: "uploadedByType",
+      required: true,
+    },
+    uploadedByType: {
+      type: String,
+      enum: ["User", "Admin"],
+      required: true,
+    },
+    isShared: {
+      type: Boolean,
+      default: false,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 export default mongoose.model("Document", documentSchema);
