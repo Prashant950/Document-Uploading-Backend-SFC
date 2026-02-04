@@ -39,10 +39,10 @@ const buildMobileVariants = (mobile) => {
   
   // Create all possible format variants
   const variants = [...new Set([
-    last10,              // "9616964306"
-    `+${last10}`,        // "+9616964306"
-    `91${last10}`,       // "919616964306"
-    `+91${last10}`,      // "+919616964306"
+    last10,              // "88888888888"
+    `+${last10}`,        // "+8888888888"
+    `91${last10}`,       // "918888888888"
+    `+91${last10}`,      // "+918888888888"
   ])];
   
   console.log("🔍 Mobile variants for input", mobile, ":", variants);
@@ -252,11 +252,19 @@ router.post("/confirm-otp", async (req, res) => {
 
     /* 🆕 USER NOT EXISTS */
     if (!user) {
+      // 🧹 CLEAN UP: Invalidate all verified OTPs for this mobile
+      await OTP.deleteMany({
+        $or: [
+          { mobileNumber: userMobile, isVerified: true },
+          { requestedMobile: userMobile, isVerified: true }
+        ]
+      });
+
       return res.json({
         success: true,
         role: "new_user",
-        nextStep: "create_profile",
-        message: "OTP verified. Please complete your profile",
+        nextStep: "waiting_approval",
+        message: "OTP verified. Please wait for admin approval",
       });
     }
 
@@ -264,15 +272,21 @@ router.post("/confirm-otp", async (req, res) => {
     const token = jwt.sign(
       { userId: user._id, role: "user", orgId: user.orgId || null },
       config.jwtSecret,
-      { expiresIn: "1d" }
+      { expiresIn: "30d" }
     );
 
     /* 🔴 NOT APPROVED */
     if (!user.isApproved) {
+      const waitingToken = jwt.sign(
+        { userId: user._id, role: "user", orgId: user.orgId || null },
+        config.jwtSecret,
+        { expiresIn: "30d" }
+      );
+      
       return res.json({
         success: true,
         role: "new_user",
-        token,
+        token: waitingToken,
         nextStep: "waiting_approval",
         message: "Waiting for admin approval",
       });
@@ -280,20 +294,35 @@ router.post("/confirm-otp", async (req, res) => {
 
     /* 🟡 APPROVED BUT PIN NOT CREATED */
     if (!user.pinHash) {
+      const pinToken = jwt.sign(
+        { userId: user._id, role: "user", orgId: user.orgId || null },
+        config.jwtSecret,
+        { expiresIn: "30d" }
+      );
+      
       return res.json({
         success: true,
         role: "user",
-        token,
+        token: pinToken,
         nextStep: "create_pin",
         message: "Please create your PIN",
       });
     }
 
     /* 🟢 APPROVED + PIN CREATED */
+    // 🔥 REFRESH user from DB to ensure latest orgId
+    const refreshedUser = await User.findById(user._id);
+    
+    const finalToken = jwt.sign(
+      { userId: refreshedUser._id, role: "user", orgId: refreshedUser.orgId || null },
+      config.jwtSecret,
+      { expiresIn: "30d" }
+    );
+
     return res.json({
       success: true,
       role: "user",
-      token,
+      token: finalToken,
       nextStep: "confirm_pin",
       message: "User verified successfully",
     });
@@ -432,7 +461,6 @@ router.post("/forgot-admin-pin", adminAuth, async (req, res) => {
     });
   }
 });
-
 
 router.get("/approval-requests", adminAuth, async (req, res) => {
   try {
@@ -660,57 +688,7 @@ router.post("/approve-user/:userId", adminAuth, async (req, res) => {
   }
 });
 
-// Get all documents (filtered by docKey)
-// router.get("/documents", authMiddleware, async (req, res) => {
-//   try {
-//     const admin = await Admin.findById(req.admin._id);
-//     if (!admin) {
-//       return res.status(404).json({ message: "Admin not found" });
-//     }
-
-//     const { docKey } = req.query;
-
-//     const query = {
-//       orgId: admin.orgId,
-//     };
-
-//     // ✅ validate docKey if provided
-//     const allowedKeys = [
-//       "CLIENT_STRATEGY",
-//       "FINANCIAL_ADVISORY",
-//       "PROJECT_BLUEPRINT",
-//       "CONSULTANT_REPORT",
-//       "CONTRACT",
-//       "HR_RECORD",
-//       "OTHER",
-//     ];
-
-//     if (docKey) {
-//       if (!allowedKeys.includes(docKey)) {
-//         return res.status(400).json({
-//           success: false,
-//           message: "Invalid docKey",
-//         });
-//       }
-//       query.docKey = docKey;
-//     }
-
-//     const documents = await Document.find(query)
-//       .sort({ createdAt: -1 })
-//       .lean();
-
-//     res.status(200).json({
-//       success: true,
-//       docKey: docKey || "ALL",
-//       count: documents.length,
-//       documents,
-//     });
-//   } catch (error) {
-//     console.error("Get documents error:", error);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// });
-
+// Get documents with optional filtering by docKey
 router.get("/documents", authMiddleware, async (req, res) => {
   try {
     const { docKey } = req.query;
