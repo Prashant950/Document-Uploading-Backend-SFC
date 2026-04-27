@@ -16,6 +16,7 @@ import { authMiddleware, adminAuth,userMiddleware } from "../middleware/auth.js"
 import { upload } from "../middleware/upload.js";
 import mime from "mime-types";
 import { ensureAdminMobileConfigured } from "../utils/adminConfig.js";
+import {uploadWithLogging} from "../middleware/upload.js";
 
 const router = express.Router();
 const ADMIN_MOBILE = config.adminMobile;
@@ -603,7 +604,7 @@ router.post("/approve-user/:userId", adminAuth, async (req, res) => {
 
 
 // Upload documents (multiple files)
-  router.post("/upload", adminAuth, upload.array("files", 50), async (req, res) => {
+  router.post("/upload", adminAuth, uploadWithLogging, async (req, res) => {
   try {
     const { docName, docKey } = req.body;
 
@@ -642,10 +643,12 @@ router.post("/approve-user/:userId", adminAuth, async (req, res) => {
 
       // ✅ CRITICAL: Stream file to GridFS completely
       await new Promise((resolve, reject) => {
-        fs.createReadStream(file.path)
-          .pipe(uploadStream)
-          .once("finish", resolve)
-          .once("error", reject);
+        // fs.createReadStream(file.path)
+        //   .pipe(uploadStream)
+        //   .once("finish", resolve)
+        //   .once("error", reject);
+        file.path // Cloudinary URL
+        file.filename // public_id
       });
 
       // 🔥 Get fileId AFTER stream completes
