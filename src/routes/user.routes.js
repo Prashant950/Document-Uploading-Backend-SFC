@@ -138,7 +138,7 @@ router.post("/user-create-pin", userMiddleware, async (req, res) => {
     await user.save();
 
     const token = jwt.sign(
-      { userId: user._id, orgId: user.orgId || null },
+      { userId: user._id, role: "user", orgId: user.orgId || null },
       config.jwtSecret,
       { expiresIn: "30d" }
     );
@@ -176,9 +176,16 @@ router.post("/user-confirm-pin", userMiddleware, async (req, res) => {
       return res.status(400).json({ message: "Incorrect PIN" });
     }
 
+    const token = jwt.sign(
+      { userId: user._id, role: "user", orgId: user.orgId || null },
+      config.jwtSecret,
+      { expiresIn: "30d" }
+    );
+
     return res.status(200).json({
       success: true,
       message: "PIN confirmed successfully",
+      token,
     });
   } catch (error) {
     console.error("User confirm PIN error:", error);

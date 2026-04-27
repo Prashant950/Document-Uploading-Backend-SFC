@@ -1,13 +1,25 @@
 import multer from "multer";
 import path from "path";
 import os from "os";
+//const { CloudinaryStorage } = require('multer-storage-cloudinary');
+import { CloudinaryStorage } from "multer-storage-cloudinary";
+//const cloudinary = require("../config/Cloudnary");
+import cloudinary from "../config/Cloudnary.js";
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, os.tmpdir()); // System temp folder
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + Math.round(Math.random() * 1e9) + path.extname(file.originalname));
+// const storage = multer.diskStorage({
+//   destination: (req, file, cb) => {
+//     cb(null, os.tmpdir()); // System temp folder
+//   },
+//   filename: (req, file, cb) => {
+//     cb(null, Date.now() + "-" + Math.round(Math.random() * 1e9) + path.extname(file.originalname));
+//   },
+// });
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "Document_uploads", // Optional: specify a folder in Cloudinary
+    allowed_formats: ["jpg", "jpeg", "png", "gif", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "csv", "mp4", "mpeg", "quicktime", "avi", "wmv", "webm"],
+    public_id: (req, file) => Date.now() + "-" + Math.round(Math.random() * 1e9) + path.extname(file.originalname),
   },
 });
 
@@ -53,3 +65,22 @@ export const upload = multer({
     fileSize: 1024 * 1024 * 1024 * 5, // 5GB max file size
   },
 });
+
+// export const uploadWithLogging = (req, res, next) => {
+//   upload.fields([{ name: "file", maxCount: 1 }])(req, res, (err) => {
+//     if (err) {
+//       console.error("Error uploading file:", err);
+//       return res.status(400).json({ error: err.message });
+//     }
+//     next();
+//   });
+// };
+export const uploadWithLogging = (req, res, next) => {
+  upload.array("files", 50)(req, res, (err) => {
+    if (err) {
+      console.error("Error uploading file:", err);
+      return res.status(400).json({ error: err.message });
+    }
+    next();
+  });
+};
