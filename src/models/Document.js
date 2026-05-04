@@ -16,11 +16,27 @@ const documentSchema = new mongoose.Schema(
         "CONTRACT",
         "HR_RECORD",
         "OTHER",
+        "Drinking_Water",
+        "Sewage_Treatment",
+        "Storm_Water",
+        "Used_Water",
+        "River_Front",
+        "Soil_Testing",
+        "Transport_Sector",
+        "Housing_&_Slum"
+
       ],
       required: true,
     },
     fileId: {
       type: mongoose.Schema.Types.ObjectId,
+    },
+    fileUrl: {
+      type: String,
+      required: true,
+    },
+    publicId: {
+      type: String,
       required: true,
     },
     originalName: {
