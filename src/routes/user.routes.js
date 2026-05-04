@@ -320,6 +320,12 @@ export default router;
 router.get("/documents", userMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.userId);
+    
+    // ✅ Approval check for document access
+    if (!user.isApproved) {
+      return res.status(403).json({ message: "User not approved yet" });
+    }
+    
     if (!user || !user.orgId) {
       return res.status(403).json({ message: "User not approved or no orgId" });
     }

@@ -17,6 +17,7 @@ import { upload } from "../middleware/upload.js";
 import mime from "mime-types";
 import { ensureAdminMobileConfigured } from "../utils/adminConfig.js";
 import {uploadWithLogging} from "../middleware/upload.js";
+import cloudinary from "../config/Cloudnary.js";
 
 const router = express.Router();
 const ADMIN_MOBILE = config.adminMobile;
@@ -482,59 +483,6 @@ router.get("/approval-requests", adminAuth, async (req, res) => {
 });
 
 // Approve user
-// router.post("/approve-user/:userId", adminAuth, async (req, res) => {
-//   try {
-//     const { userId } = req.params;
-
-//     const admin = await Admin.findById(req.admin._id);
-//     if (!admin) {
-//       return res.status(404).json({ message: "Admin not found" });
-//     }
-
-//     const user = await User.findById(userId);
-//     if (!user) {
-//       return res.status(404).json({ message: "User not found" });
-//     }
-
-//     // Approve user and assign orgId
-//     user.isApproved = true;
-//     user.orgId = admin.orgId;
-//     user.approvedAt = new Date();
-//     await user.save();
-
-//     // Create approval notification
-//     await Notification.create({
-//       adminId: admin._id,
-//       userId: user._id,
-//       type: "approval_approved",
-//       message: `User ${user.name} (${user.mobileNumber}) has been approved`,
-//     });
-
-//     // Mark request notification as read
-//     await Notification.updateMany(
-//       {
-//         adminId: admin._id,
-//         userId: user._id,
-//         type: "approval_request",
-//       },
-//       { isRead: true }
-//     );
-
-//     res.status(200).json({
-//       success: true,
-//       message: "User approved successfully",
-//       user: {
-//         id: user._id,
-//         name: user.name,
-//         mobileNumber: user.mobileNumber,
-//         orgId: user.orgId,
-//       },
-//     });
-//   } catch (error) {
-//     console.error("Approve user error:", error);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// });
 router.post("/approve-user/:userId", adminAuth, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -633,31 +581,11 @@ router.post("/approve-user/:userId", adminAuth, async (req, res) => {
     const uploadedDocs = [];
 
     for (const file of req.files) {
-      const uploadStream = bucket.openUploadStream(file.originalname, {
-        contentType: file.mimetype,
-        metadata: {
-          orgId: admin.orgId,
-          uploadedBy: admin._id.toString(),
-        },
-      });
-
-      // ✅ CRITICAL: Stream file to GridFS completely
-      await new Promise((resolve, reject) => {
-        // fs.createReadStream(file.path)
-        //   .pipe(uploadStream)
-        //   .once("finish", resolve)
-        //   .once("error", reject);
-        file.path // Cloudinary URL
-        file.filename // public_id
-      });
-
-      // 🔥 Get fileId AFTER stream completes
-      const fileId = uploadStream.id;
-
       const document = await Document.create({
         docName,
         docKey,
-        fileId,
+        fileUrl: file.path, // Cloudinary URL
+        publicId: file.filename, // public_id
         originalName: file.originalname,
         contentType: file.mimetype,
         fileSize: file.size,
@@ -744,137 +672,12 @@ router.get("/documents", authMiddleware, async (req, res) => {
   }
 });
 
-
-
-// View document
-// router.get("/view/:id", adminAuth, async (req, res) => {
-//   try {
-//     /* 🔐 AUTH */
-//     const admin = await Admin.findById(req.admin._id).lean();
-//     if (!admin) {
-//       return res.status(401).json({
-//         success: false,
-//         message: "Unauthorized",
-//       });
-//     }
-//     const token =
-//       req.headers.authorization?.split(" ")[1] ||
-//       req.query.token; // 👈 fallback
-
-//     if (!token) {
-//       return res.status(401).json({
-//         success: false,
-//         message: "No auth token provided",
-//       });
-//     }
-
-//     const decoded = jwt.verify(token, config.jwtSecret);
-//     if (!decoded || String(decoded.userId) !== String(admin._id))
-//      {
-//       return res.status(401).json({
-//         success: false,
-//         message: "Invalid auth token",
-//       });
-//     }
-
-//     /* ✅ VALIDATE ID */
-//     const { id } = req.params;
-//     if (!mongoose.Types.ObjectId.isValid(id)) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Invalid document ID",
-//       });
-//     }
-
-//     /* 📄 FIND DOCUMENT */
-//     const doc = await Document.findById(id).lean();
-//     if (!doc) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Document not found",
-//       });
-//     }
-
-//     /* 🏢 ORG SECURITY */
-//     if (String(doc.orgId) !== String(admin.orgId)) {
-//       return res.status(403).json({
-//         success: false,
-//         message: "Access denied",
-//       });
-//     }
-
-//     /* 📦 GRIDFS */
-//     const bucket = new mongoose.mongo.GridFSBucket(
-//       mongoose.connection.db,
-//       { bucketName: "documents" }
-//     );
-
-//     /* ✅ INDUSTRY VIEW HEADERS */
-//     // res.set({
-//     //   "Content-Type": doc.contentType || "application/octet-stream",
-//     //   "Content-Disposition": `inline; filename="${doc.originalName}"`,
-//     //   "Accept-Ranges": "bytes",               // 🔥 VERY IMPORTANT
-//     //   "X-Content-Type-Options": "nosniff",
-//     //   "Cache-Control": "no-store, no-cache",
-//     //   "Pragma": "no-cache",
-//     // });
-
-// res.set({
-//   "Content-Type": doc.contentType,
-//   "Content-Disposition": `inline; filename="${doc.originalName}"`,
-//   "Accept-Ranges": "bytes",
-//   "Cache-Control": "no-store",
-//   "Pragma": "no-cache",
-// });
-// // res.set({
-// //   "Content-Type": doc.contentType,
-// //   "Content-Disposition": "inline",
-// //   "Cache-Control": "no-store",
-// //   "Pragma": "no-cache",
-// //   "X-Content-Type-Options": "nosniff",
-// // });
-
-
-
-//     /* 🎥 STREAM */
-//     const fileId = mongoose.Types.ObjectId.isValid(doc.fileId)
-//       ? mongoose.Types.ObjectId(doc.fileId)
-//       : doc.fileId;
-
-//     if (doc.fileSize) {
-//       res.setHeader("Content-Length", String(doc.fileSize));
-//     }
-
-//     const stream = bucket.openDownloadStream(fileId);
-
-//     stream.on("error", (err) => {
-//       console.error("❌ GridFS stream error:", err);
-//       if (!res.headersSent) {
-//         res.status(404).end("File not found");
-//       }
-//     });
-
-//     stream.pipe(res);
-//   } catch (error) {
-//     console.error("❌ View document error:", error);
-//     if (!res.headersSent) {
-//       res.status(500).json({
-//         success: false,
-//         message: "Unable to view document",
-//       });
-//     }
-//   }
-// });
-
-
 router.get("/view/:id", authMiddleware, async (req, res) => {
   try {
     const { role, userId } = req;
 
     const doc = await Document.findById(req.params.id).lean();
     if (!doc) return res.status(404).json({ message: "Document not found" });
-
-    let orgId;
 
     // 👑 ADMIN ACCESS
     if (role === "admin") {
@@ -883,8 +686,6 @@ router.get("/view/:id", authMiddleware, async (req, res) => {
 
       if (String(doc.orgId) !== String(admin.orgId))
         return res.status(403).json({ message: "Access denied" });
-
-      orgId = admin.orgId;
     }
 
     // 👤 USER ACCESS - Can view any document in their organization
@@ -893,59 +694,72 @@ router.get("/view/:id", authMiddleware, async (req, res) => {
       if (!user || !user.isApproved)
         return res.status(403).json({ message: "Not approved" });
 
-      // ✅ Allow viewing documents from same organization
       if (String(doc.orgId) !== String(user.orgId))
         return res.status(403).json({ message: "Access denied" });
-
-      orgId = user.orgId;
     }
 
-    const bucket = new mongoose.mongo.GridFSBucket(
-      mongoose.connection.db,
-      { bucketName: "documents" }
-    );
-
-    res.setHeader("Content-Type", doc.contentType || "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `inline; filename="${doc.originalName}"`
-    );
-    res.setHeader("Accept-Ranges", "bytes");
-    res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Pragma", "no-cache");
-
-    if (doc.fileSize) {
-      res.setHeader("Content-Length", String(doc.fileSize));
-    }
-
-    const fileId = new mongoose.Types.ObjectId(doc.fileId);
-    const stream = bucket.openDownloadStream(fileId);
-
-    stream.on("error", (err) => {
-      console.error("GridFS error:", err);
-      if (!res.headersSent) {
-        res.status(404).end("File not found");
-      }
+    // ✅ Return Cloudinary URL for viewing
+    res.status(200).json({
+      success: true,
+      message: "Document URL retrieved",
+      document: {
+        id: doc._id,
+        docName: doc.docName,
+        originalName: doc.originalName,
+        contentType: doc.contentType,
+        fileUrl: doc.fileUrl,
+        fileSize: doc.fileSize,
+        uploadedAt: doc.createdAt,
+      },
     });
-
-    stream.pipe(res);
   } catch (err) {
     console.error("View error:", err);
-    if (!res.headersSent) {
-      res.status(500).json({ message: "View failed" });
-    }
+    res.status(500).json({ message: "View failed" });
   }
 });
 
 
+// router.get("/download/:id", adminAuth, async (req, res) => {
+//   try {
+//     const { id } = req.params;
+
+//     if (!mongoose.Types.ObjectId.isValid(id)) {
+//       return res.status(400).json({ message: "Invalid document ID" });
+//     }
+
+//     const admin = await Admin.findById(req.admin._id);
+//     if (!admin) {
+//       return res.status(401).json({ message: "Unauthorized" });
+//     }
+
+//     const doc = await Document.findById(_id);
+//     if (!doc) {
+//       return res.status(404).json({ message: "Document not found" });
+//     }
+
+//     if (doc.orgId.toString() !== admin.orgId.toString()) {
+//       return res.status(403).json({ message: "Access denied" });
+//     }
+
+//     // ✅ Generate Cloudinary download URL with fl_attachment flag
+//     const downloadUrl = doc.fileUrl.replace("/upload/", "/upload/fl_attachment/");
+
+//     // res.status(200).json({
+//     //   success: true,
+//     //   message: "Download link generated",
+//     //   downloadUrl,
+//     //   fileName: doc.originalName,
+//     // });
+//     return res.redirect(downloadUrl);
+//   } catch (err) {
+//     console.error("Download error:", err);
+//     res.status(500).json({ message: "Download failed" });
+//   }
+// });
 
 router.get("/download/:id", adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ message: "Invalid document ID" });
-    }
 
     const admin = await Admin.findById(req.admin._id);
     if (!admin) {
@@ -961,25 +775,21 @@ router.get("/download/:id", adminAuth, async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    const bucket = new mongoose.mongo.GridFSBucket(
-      mongoose.connection.db,
-      { bucketName: "documents" }
+    const downloadUrl = doc.fileUrl.replace(
+      "/upload/",
+      "/upload/fl_attachment/"
     );
 
-    res.set({
-      "Content-Type": doc.contentType,
-      "Content-Disposition": `attachment; filename="${doc.originalName}"`,
+    return res.json({
+      success: true,
+      url: downloadUrl,
+      fileName: doc.originalName,
     });
-    if (doc.fileSize) {
-      res.setHeader("Content-Length", String(doc.fileSize));
-    }
-
-    bucket.openDownloadStream(doc.fileId).pipe(res);
   } catch (err) {
-    console.error("Download error:", err);
     res.status(500).json({ message: "Download failed" });
   }
 });
+
 
 // Share document
 router.get("/share/:id", adminAuth, async (req, res) => {
@@ -996,54 +806,23 @@ router.get("/share/:id", adminAuth, async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    const bucket = new mongoose.mongo.GridFSBucket(mongoose.connection.db, {
-      bucketName: "documents",
+    // ✅ Return shareable Cloudinary URL
+    res.status(200).json({
+      success: true,
+      message: "Document share link generated",
+      shareData: {
+        docName: doc.docName,
+        originalName: doc.originalName,
+        fileUrl: doc.fileUrl,
+        fileSize: doc.fileSize,
+        contentType: doc.contentType,
+        uploadedAt: doc.createdAt,
+        shareLink: doc.fileUrl, // Direct Cloudinary link
+      },
     });
-
-    // Determine content type and filename (ensure extension)
-    const contentType = doc.contentType || "application/octet-stream";
-    let filename = doc.originalName || `document_${doc._id}`;
-    if (!filename.includes(".")) {
-      const ext = mime.extension(contentType) || "bin";
-      filename = `${filename}.${ext}`;
-    }
-
-    // Expose headers so clients can read filename/content-length
-    res.setHeader("Access-Control-Expose-Headers", "Content-Disposition, Content-Type, Content-Length");
-    res.setHeader("Content-Type", contentType);
-    // RFC5987-safe UTF-8 filename
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${encodeURIComponent(filename)}"; filename*=UTF-8''${encodeURIComponent(filename)}`
-    );
-    if (doc.fileSize) {
-      res.setHeader("Content-Length", String(doc.fileSize));
-    }
-    res.setHeader("Content-Transfer-Encoding", "binary");
-
-    const fileId = mongoose.Types.ObjectId.isValid(doc.fileId)
-      ? mongoose.Types.ObjectId(doc.fileId)
-      : doc.fileId;
-
-    const downloadStream = bucket.openDownloadStream(fileId);
-
-    downloadStream.on("error", (err) => {
-      console.error("GridFS download error", err);
-      if (!res.headersSent) {
-        res.status(500).json({ message: "Share failed" });
-      } else {
-        res.end();
-      }
-    });
-
-    downloadStream.pipe(res);
   } catch (err) {
     console.error("Share error", err);
-    if (!res.headersSent) {
-      res.status(500).json({ message: "Share failed" });
-    } else {
-      res.end();
-    }
+    res.status(500).json({ message: "Share failed" });
   }
 });
 
@@ -1071,17 +850,15 @@ router.delete("/delete/:id", adminAuth, async (req, res) => {
       return res.status(403).json({ message: "Access denied" });
     }
 
-    const bucket = new mongoose.mongo.GridFSBucket(
-      mongoose.connection.db,
-      { bucketName: "documents" }
-    );
-
-    /* 🧨 DELETE FILE FROM GRIDFS */
+    /* 🧨 DELETE FILE FROM CLOUDINARY */
     try {
-      await bucket.delete(new mongoose.Types.ObjectId(doc.fileId));
-    } catch (gridErr) {
-      console.error("⚠️ GridFS delete error:", gridErr);
-      // file missing ho to bhi document delete allow
+      if (doc.publicId) {
+        await cloudinary.uploader.destroy(doc.publicId);
+        console.log("✅ Cloudinary file deleted:", doc.publicId);
+      }
+    } catch (cloudErr) {
+      console.error("⚠️ Cloudinary delete error:", cloudErr);
+      // File missing, allow document delete anyway
     }
 
     /* 🗑 DELETE DB RECORD */

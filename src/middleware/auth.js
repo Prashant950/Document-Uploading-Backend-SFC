@@ -85,9 +85,9 @@ export const userMiddleware = async (req, res, next) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    if (!user.isApproved) {
-      return res.status(403).json({ message: "User not approved" });
-    }
+    // ✅ REMOVED isApproved check from middleware
+    // Approval check should happen only in routes that require it (documents, etc.)
+    // This allows users to create/confirm PIN even before approval
 
     req.userId = user._id;
     req.role = decoded.role;

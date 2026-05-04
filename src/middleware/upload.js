@@ -6,14 +6,6 @@ import { CloudinaryStorage } from "multer-storage-cloudinary";
 //const cloudinary = require("../config/Cloudnary");
 import cloudinary from "../config/Cloudnary.js";
 
-// const storage = multer.diskStorage({
-//   destination: (req, file, cb) => {
-//     cb(null, os.tmpdir()); // System temp folder
-//   },
-//   filename: (req, file, cb) => {
-//     cb(null, Date.now() + "-" + Math.round(Math.random() * 1e9) + path.extname(file.originalname));
-//   },
-// });
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
@@ -66,15 +58,6 @@ export const upload = multer({
   },
 });
 
-// export const uploadWithLogging = (req, res, next) => {
-//   upload.fields([{ name: "file", maxCount: 1 }])(req, res, (err) => {
-//     if (err) {
-//       console.error("Error uploading file:", err);
-//       return res.status(400).json({ error: err.message });
-//     }
-//     next();
-//   });
-// };
 export const uploadWithLogging = (req, res, next) => {
   upload.array("files", 50)(req, res, (err) => {
     if (err) {
