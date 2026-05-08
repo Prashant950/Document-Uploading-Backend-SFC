@@ -2,17 +2,29 @@ import jwt from "jsonwebtoken";
 import { config } from "../config/config.js";
 import User from "../models/User.js";
 import Admin from "../models/Admin.js";
+import RefreshToken from "../models/RefreshToken.js";
 
 export const authMiddleware = async (req, res, next) => {
   try {
     // ✅ Support token from both header AND query param (for mobile)
-    let token = req.headers.authorization?.split(" ")[1];
+    let token = null;
+    
+    // 🔍 Try to extract token from Authorization header (Bearer <token>)
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    if (authHeader) {
+      // Handle both "Bearer token" and just "token"
+      token = authHeader.startsWith("Bearer ") 
+        ? authHeader.slice(7) 
+        : authHeader;
+    }
+    
+    // 🔥 If no header token, try query param (for mobile apps)
     if (!token) {
-      token = req.query.token; // 🔥 Mobile apps send via query param
+      token = req.query.token;
     }
 
     if (!token) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({ message: "Unauthorized - No token provided" });
     }
 
     const decoded = jwt.verify(token, config.jwtSecret);
@@ -32,19 +44,25 @@ export const authMiddleware = async (req, res, next) => {
     }
     next();
   } catch (error) {
-    res.status(401).json({ message: "Invalid Token" });
+    console.error("🔐 AUTH ERROR:", error.message);
+    res.status(401).json({ message: "Invalid Token - Token verification failed" });
   }
 };
 
 export const adminAuth = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith("Bearer ")
-      ? authHeader.split(" ")[1]
-      : null;
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    
+    // Extract token - handle both "Bearer token" and just "token"
+    let token = null;
+    if (authHeader) {
+      token = authHeader.startsWith("Bearer ") 
+        ? authHeader.slice(7) 
+        : authHeader;
+    }
 
     if (!token) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({ message: "Unauthorized - No token provided" });
     }
 
     const decoded = jwt.verify(token, config.jwtSecret);
@@ -62,16 +80,31 @@ export const adminAuth = async (req, res, next) => {
     req.orgId = decoded.orgId || admin.orgId || null;
     next();
   } catch (err) {
-    return res.status(401).json({ message: "Invalid token" });
+    console.error("🔐 ADMIN AUTH ERROR:", err.message);
+    return res.status(401).json({ message: "Invalid token - Token verification failed" });
   }
 };
 
 
 export const userMiddleware = async (req, res, next) => {
   try {
-    const token = req.headers.authorization?.split(" ")[1];
+    const authHeader = req.headers.authorization || req.headers.Authorization;
+    
+    // Extract token - handle both "Bearer token" and just "token"
+    let token = null;
+    if (authHeader) {
+      token = authHeader.startsWith("Bearer ") 
+        ? authHeader.slice(7) 
+        : authHeader;
+    }
+    
+    // Also check query param as fallback
     if (!token) {
-      return res.status(401).json({ message: "Unauthorized" });
+      token = req.query.token;
+    }
+
+    if (!token) {
+      return res.status(401).json({ message: "Unauthorized - No token provided" });
     }
 
     const decoded = jwt.verify(token, config.jwtSecret);

@@ -8,6 +8,8 @@ import Admin from "../models/Admin.js";
 import { config } from "../config/config.js";
 import { sendOTP, verifyOTP, normalizeNumber } from "../utils/otpGenerator.js";
 import { userMiddleware, adminAuth, authMiddleware } from "../middleware/auth.js";
+import { generateAccessToken, generateRefreshToken, revokeRefreshToken, refreshAccessToken } from "../utils/tokenManager.js";
+import RefreshToken from "../models/RefreshToken.js";
 
 
 const router = express.Router();
@@ -310,8 +312,72 @@ router.post("/user-forgot-pin", userMiddleware, async (req, res) => {
 //   }
 // });
 
+/* =====================================================
+   🔐 TOKEN MANAGEMENT ENDPOINTS
+   ===================================================== */
 
+// 🔄 REFRESH ACCESS TOKEN
+router.post("/refresh-token", async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
 
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Refresh token is required",
+      });
+    }
+
+    const result = await refreshAccessToken(refreshToken);
+
+    return res.json({
+      success: true,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+      message: "Token refreshed successfully",
+    });
+  } catch (error) {
+    console.error("🔴 REFRESH TOKEN ERROR:", error.message);
+    return res.status(401).json({
+      success: false,
+      message: error.message || "Failed to refresh token",
+    });
+  }
+});
+
+// 🚪 LOGOUT - Revoke Refresh Token
+router.post("/logout", async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Refresh token is required for logout",
+      });
+    }
+
+    const revoked = await revokeRefreshToken(refreshToken);
+
+    if (!revoked) {
+      return res.status(400).json({
+        success: false,
+        message: "Token not found or already revoked",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Logged out successfully",
+    });
+  } catch (error) {
+    console.error("🔴 LOGOUT ERROR:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Logout failed",
+    });
+  }
+});
 
 export default router;
 
