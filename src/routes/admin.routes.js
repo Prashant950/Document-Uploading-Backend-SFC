@@ -18,6 +18,9 @@ import mime from "mime-types";
 import { ensureAdminMobileConfigured } from "../utils/adminConfig.js";
 import {uploadWithLogging} from "../middleware/upload.js";
 import cloudinary from "../config/Cloudnary.js";
+import DocumentCategory from "../models/DocumentCategories.js";
+import { generateAccessToken, generateRefreshToken, revokeAllUserTokens, revokeRefreshToken, refreshAccessToken } from "../utils/tokenManager.js";
+import RefreshToken from "../models/RefreshToken.js";
 
 const router = express.Router();
 const ADMIN_MOBILE = config.adminMobile;
@@ -279,12 +282,6 @@ router.post("/confirm-otp", async (req, res) => {
 
     /* 🔴 NOT APPROVED */
     if (!user.isApproved) {
-      const waitingToken = jwt.sign(
-        { userId: user._id, role: "user", orgId: user.orgId || null },
-        config.jwtSecret,
-        { expiresIn: "30d" }
-      );
-      
       return res.json({
         success: true,
         role: "new_user",
@@ -296,12 +293,6 @@ router.post("/confirm-otp", async (req, res) => {
 
     /* 🟡 APPROVED BUT PIN NOT CREATED */
     if (!user.pinHash) {
-      const pinToken = jwt.sign(
-        { userId: user._id, role: "user", orgId: user.orgId || null },
-        config.jwtSecret,
-        { expiresIn: "30d" }
-      );
-      
       return res.json({
         success: true,
         role: "user",
@@ -314,12 +305,6 @@ router.post("/confirm-otp", async (req, res) => {
     /* 🟢 APPROVED + PIN CREATED */
     // 🔥 REFRESH user from DB to ensure latest orgId
     const refreshedUser = await User.findById(user._id);
-    
-    const finalToken = jwt.sign(
-      { userId: refreshedUser._id, role: "user", orgId: refreshedUser.orgId || null },
-      config.jwtSecret,
-      { expiresIn: "30d" }
-    );
 
     return res.json({
       success: true,
@@ -405,7 +390,7 @@ router.post("/confirm-admin-pin", adminAuth, async (req, res) => {
       config.jwtSecret,
       { expiresIn: "30d" }
     );
-console.log("✅ Admin OrgId:", admin.orgId);
+//console.log("✅ Admin OrgId:", admin.orgId);
     return res.json({
       success: true,
       token,
@@ -584,8 +569,8 @@ router.post("/approve-user/:userId", adminAuth, async (req, res) => {
       const document = await Document.create({
         docName,
         docKey,
-        fileUrl: file.path, // Cloudinary URL
-        publicId: file.filename, // public_id
+        fileUrl: file.path, 
+        publicId: file.filename, 
         originalName: file.originalname,
         contentType: file.mimetype,
         fileSize: file.size,
@@ -596,7 +581,6 @@ router.post("/approve-user/:userId", adminAuth, async (req, res) => {
 
       uploadedDocs.push(document);
       
-      // 🧹 Remove temp file after successful upload
       try {
         fs.unlinkSync(file.path);
       } catch (err) {
@@ -672,51 +656,51 @@ router.get("/documents", authMiddleware, async (req, res) => {
   }
 });
 
-router.get("/view/:id", authMiddleware, async (req, res) => {
-  try {
-    const { role, userId } = req;
+// router.get("/view/:id", authMiddleware, async (req, res) => {
+//   try {
+//     const { role, userId } = req;
 
-    const doc = await Document.findById(req.params.id).lean();
-    if (!doc) return res.status(404).json({ message: "Document not found" });
+//     const doc = await Document.findById(req.params.id).lean();
+//     if (!doc) return res.status(404).json({ message: "Document not found" });
 
-    // 👑 ADMIN ACCESS
-    if (role === "admin") {
-      const admin = await Admin.findById(userId);
-      if (!admin) return res.status(401).json({ message: "Unauthorized" });
+//     // 👑 ADMIN ACCESS
+//     if (role === "admin") {
+//       const admin = await Admin.findById(userId);
+//       if (!admin) return res.status(401).json({ message: "Unauthorized" });
 
-      if (String(doc.orgId) !== String(admin.orgId))
-        return res.status(403).json({ message: "Access denied" });
-    }
+//       if (String(doc.orgId) !== String(admin.orgId))
+//         return res.status(403).json({ message: "Access denied" });
+//     }
 
-    // 👤 USER ACCESS - Can view any document in their organization
-    if (role === "user") {
-      const user = await User.findById(userId);
-      if (!user || !user.isApproved)
-        return res.status(403).json({ message: "Not approved" });
+//     // 👤 USER ACCESS - Can view any document in their organization
+//     if (role === "user") {
+//       const user = await User.findById(userId);
+//       if (!user || !user.isApproved)
+//         return res.status(403).json({ message: "Not approved" });
 
-      if (String(doc.orgId) !== String(user.orgId))
-        return res.status(403).json({ message: "Access denied" });
-    }
+//       if (String(doc.orgId) !== String(user.orgId))
+//         return res.status(403).json({ message: "Access denied" });
+//     }
 
-    // ✅ Return Cloudinary URL for viewing
-    res.status(200).json({
-      success: true,
-      message: "Document URL retrieved",
-      document: {
-        id: doc._id,
-        docName: doc.docName,
-        originalName: doc.originalName,
-        contentType: doc.contentType,
-        fileUrl: doc.fileUrl,
-        fileSize: doc.fileSize,
-        uploadedAt: doc.createdAt,
-      },
-    });
-  } catch (err) {
-    console.error("View error:", err);
-    res.status(500).json({ message: "View failed" });
-  }
-});
+//     // ✅ Return Cloudinary URL for viewing
+//     res.status(200).json({
+//       success: true,
+//       message: "Document URL retrieved",
+//       document: {
+//         id: doc._id,
+//         docName: doc.docName,
+//         originalName: doc.originalName,
+//         contentType: doc.contentType,
+//         fileUrl: doc.fileUrl,
+//         fileSize: doc.fileSize,
+//         uploadedAt: doc.createdAt,
+//       },
+//     });
+//   } catch (err) {
+//     console.error("View error:", err);
+//     res.status(500).json({ message: "View failed" });
+//   }
+// });
 
 
 // router.get("/download/:id", adminAuth, async (req, res) => {
@@ -757,41 +741,193 @@ router.get("/view/:id", authMiddleware, async (req, res) => {
 //   }
 // });
 
+// router.get("/view/:id", authMiddleware, async (req, res) => {
+//   try {
+//     const { role, userId } = req;
+
+//     const doc = await Document.findById(req.params.id).lean();
+//     if (!doc) return res.status(404).json({ message: "Document not found" });
+
+//     // 👑 ADMIN ACCESS
+//     if (role === "admin") {
+//       const admin = await Admin.findById(userId);
+//       if (!admin) return res.status(401).json({ message: "Unauthorized" });
+//       if (String(doc.orgId) !== String(admin.orgId))
+//         return res.status(403).json({ message: "Access denied" });
+//     }
+
+//     // 👤 USER ACCESS - Can view documents in their organization
+//     if (role === "user") {
+//       const user = await User.findById(userId);
+//       if (!user || !user.isApproved)
+//         return res.status(403).json({ message: "Not approved" });
+//       if (String(doc.orgId) !== String(user.orgId))
+//         return res.status(403).json({ message: "Access denied" });
+//     }
+
+//     // ✅ REDIRECT to Cloudinary URL (mobile app will download and open)
+//     return res.redirect(doc.fileUrl);
+    
+//   } catch (err) {
+//     console.error("View error:", err);
+//     res.status(500).json({ message: "View failed" });
+//   }
+// });
+
+router.get("/view/:id", authMiddleware, async (req, res) => {
+  try {
+    const { role, userId } = req;
+
+    const doc = await Document.findById(req.params.id);
+
+    if (!doc) {
+      return res.status(404).json({
+        message: "Document not found",
+      });
+    }
+
+    // ADMIN ACCESS
+    if (role === "admin") {
+      const admin = await Admin.findById(userId);
+
+      if (!admin) {
+        return res.status(401).json({
+          message: "Unauthorized",
+        });
+      }
+
+      if (String(doc.orgId) !== String(admin.orgId)) {
+        return res.status(403).json({
+          message: "Access denied",
+        });
+      }
+    }
+
+    // USER ACCESS
+    if (role === "user") {
+      const user = await User.findById(userId);
+
+      if (!user || !user.isApproved) {
+        return res.status(403).json({
+          message: "Not approved",
+        });
+      }
+
+      if (String(doc.orgId) !== String(user.orgId)) {
+        return res.status(403).json({
+          message: "Access denied",
+        });
+      }
+    }
+
+    // important headers
+    res.setHeader(
+      "Content-Disposition",
+      `inline; filename="${doc.originalName}"`
+    );
+
+    res.setHeader(
+      "Content-Type",
+      doc.mimeType || "application/octet-stream"
+    );
+
+    // send cloudinary file
+    return res.redirect(doc.fileUrl);
+
+  } catch (err) {
+    console.error("View error:", err);
+
+    res.status(500).json({
+      message: "View failed",
+    });
+  }
+});
+
+
+// router.get("/download/:id", adminAuth, async (req, res) => {
+//   try {
+//     const { id } = req.params;
+
+//     const admin = await Admin.findById(req.admin._id);
+//     if (!admin) {
+//       return res.status(401).json({ message: "Unauthorized" });
+//     }
+
+//     const doc = await Document.findById(id);
+//     if (!doc) {
+//       return res.status(404).json({ message: "Document not found" });
+//     }
+
+//     if (doc.orgId.toString() !== admin.orgId.toString()) {
+//       return res.status(403).json({ message: "Access denied" });
+//     }
+
+//     const downloadUrl = doc.fileUrl.replace(
+//       "/upload/",
+//       "/upload/fl_attachment/"
+//     );
+
+//     return res.json({
+//       success: true,
+//       url: downloadUrl,
+//       fileName: doc.originalName,
+//     });
+//   } catch (err) {
+//     res.status(500).json({ message: "Download failed" });
+//   }
+// });
+
+
+//Share document
+
 router.get("/download/:id", adminAuth, async (req, res) => {
   try {
     const { id } = req.params;
 
     const admin = await Admin.findById(req.admin._id);
+
     if (!admin) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
     }
 
     const doc = await Document.findById(id);
+
     if (!doc) {
-      return res.status(404).json({ message: "Document not found" });
+      return res.status(404).json({
+        message: "Document not found",
+      });
     }
 
-    if (doc.orgId.toString() !== admin.orgId.toString()) {
-      return res.status(403).json({ message: "Access denied" });
+    // ORG CHECK
+    if (
+      String(doc.orgId) !==
+      String(admin.orgId)
+    ) {
+      return res.status(403).json({
+        message: "Access denied",
+      });
     }
 
+    // FORCE DOWNLOAD FROM CLOUDINARY
     const downloadUrl = doc.fileUrl.replace(
       "/upload/",
       "/upload/fl_attachment/"
     );
 
-    return res.json({
-      success: true,
-      url: downloadUrl,
-      fileName: doc.originalName,
-    });
+    return res.redirect(downloadUrl);
+
   } catch (err) {
-    res.status(500).json({ message: "Download failed" });
+    console.log("Download Error:", err);
+
+    res.status(500).json({
+      message: "Download failed",
+    });
   }
 });
 
 
-// Share document
 router.get("/share/:id", adminAuth, async (req, res) => {
   try {
     const id = req.params.id;
@@ -919,6 +1055,203 @@ router.patch("/rename/:id", adminAuth, async (req, res) => {
   }
 });
 
+// Get document categories with document count
+router.get('/document-categories', adminAuth, async (req, res) => {
+  try {
+    const categories = await DocumentCategory.find()
+      .select('_id name description icon createdAt')
+      .lean();
 
+    // Add document count for each category
+    const categoriesWithCount = await Promise.all(
+      categories.map(async (cat) => {
+        const count = await Document.countDocuments({ categoryId: cat._id });
+        return { ...cat, documentCount: count };
+      })
+    );
+
+    res.json({ categories: categoriesWithCount });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Create new document category
+router.post('/document-categories', adminAuth, async (req, res) => {
+  const { name, description, icon } = req.body;
+
+  try {
+    // Validation
+    if (!name || name.trim() === '') {
+      return res.status(400).json({ message: 'Category name is required' });
+    }
+
+    // Check if category already exists
+    const exists = await DocumentCategory.findOne({ name: name.trim() });
+    if (exists) {
+      return res.status(409).json({ message: 'Category already exists' });
+    }
+
+    // Create new category
+    const category = new DocumentCategory({
+      name: name.trim(),
+      description: description || '',
+      icon: icon || 'folder',
+      createdBy: req.admin._id,
+    });
+
+    const savedCategory = await category.save();
+
+    res.status(201).json({
+      _id: savedCategory._id,
+      name: savedCategory.name,
+      description: savedCategory.description,
+      icon: savedCategory.icon,
+      documentCount: 0,
+      createdAt: savedCategory.createdAt,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Update document category
+router.patch(
+  '/document-categories/:id',
+  adminAuth,
+  async (req, res) => {
+    const { id } = req.params;
+    const { name, description, icon } = req.body;
+
+    try {
+      // Find category
+      const category = await DocumentCategory.findById(id);
+      if (!category) {
+        return res.status(404).json({ message: 'Category not found' });
+      }
+
+      // Validation
+      if (name && name.trim() === '') {
+        return res.status(400).json({ message: 'Category name cannot be empty' });
+      }
+
+      // Check if new name already exists
+      if (name && name !== category.name) {
+        const exists = await DocumentCategory.findOne({ name: name.trim() });
+        if (exists) {
+          return res.status(409).json({ message: 'Category name already exists' });
+        }
+      }
+
+      // Update fields
+      if (name) category.name = name.trim();
+      if (description !== undefined) category.description = description;
+      if (icon) category.icon = icon;
+
+      const updated = await category.save();
+
+      // Get document count
+      const count = await Document.countDocuments({ categoryId: id });
+
+      res.json({
+        _id: updated._id,
+        name: updated.name,
+        description: updated.description,
+        icon: updated.icon,
+        documentCount: count,
+        createdAt: updated.createdAt,
+      });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
+    }
+  }
+);
+
+// Delete document category
+router.delete('/document-categories/:id', adminAuth, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const category = await DocumentCategory.findByIdAndDelete(id);
+
+    if (!category) {
+      return res.status(404).json({ message: 'Category not found' });
+    }
+
+    // Optional: Delete all documents in this category
+    // await Document.deleteMany({ categoryId: id });
+
+    res.json({ message: 'Category deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+/* =====================================================
+   🔐 ADMIN TOKEN MANAGEMENT ENDPOINTS
+   ===================================================== */
+
+// 🔄 REFRESH ACCESS TOKEN
+router.post("/refresh-token", async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Refresh token is required",
+      });
+    }
+
+    const result = await refreshAccessToken(refreshToken);
+
+    return res.json({
+      success: true,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+      message: "Token refreshed successfully",
+    });
+  } catch (error) {
+    console.error("🔴 ADMIN REFRESH TOKEN ERROR:", error.message);
+    return res.status(401).json({
+      success: false,
+      message: error.message || "Failed to refresh token",
+    });
+  }
+});
+
+// 🚪 ADMIN LOGOUT - Revoke Refresh Token
+router.post("/logout", async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Refresh token is required for logout",
+      });
+    }
+
+    const revoked = await revokeRefreshToken(refreshToken);
+
+    if (!revoked) {
+      return res.status(400).json({
+        success: false,
+        message: "Token not found or already revoked",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Admin logged out successfully",
+    });
+  } catch (error) {
+    console.error("🔴 ADMIN LOGOUT ERROR:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Logout failed",
+    });
+  }
+});
 
 export default router;
